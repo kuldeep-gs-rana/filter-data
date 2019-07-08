@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<file:config name="File_Config" doc:name="File Config" doc:id="2c6d284e-6837-4cbe-a36a-a4a2f2b70840" >
+		<file:connection workingDir="C:\Users\kuldeep\Desktop\Mule 3 slides\input" />
+	</file:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="dff69881-eeae-44ef-8d44-d2f33c7a4f41" >
+		<db:oracle-connection host="localhost" user="kuldeep" password="test"/>
+	</db:config>
+	<flow name="employeeFlow" doc:id="6f858030-0092-4a7c-9e85-706ea97f6f32" >
+		<file:listener doc:name="On New or Updated File" doc:id="d1018daf-3334-4088-a3ea-2127b0a80ce1" config-ref="File_Config" recursive="false" moveToDirectory="C:\Users\kuldeep\Desktop\Mule 3 slides\output">
+			<scheduling-strategy >
+				<fixed-frequency />
+			</scheduling-strategy>
+			<file:matcher filenamePattern="*.csv" />
+		</file:listener>
+		<ee:transform doc:name="Transform Message" doc:id="6a384cca-c6df-40bc-b05f-178035d4275a">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map {
+	
+	id: $.id,
+	firstName: ($.name splitBy(' '))[0],
+	middleName: ($.name splitBy(' '))[1],
+	lastName: ($.name splitBy(' '))[2],
+	joiningDate: $.startDate,
+	leavingDate: $.endDate,
+	designation: $.designation,
+	department: $.department,
+	date: now() as String {format: "yyyy-MM-dd"}
+ }]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<batch:job jobName="employeeBatch_Job" doc:id="a006546e-0dcb-4862-baa1-e5c2aac4e667" >
+			<batch:process-records >
+				<batch:step name="Batch_Step1" doc:id="18865ef4-2c73-440d-844e-6cb7215dad63">
+					<set-variable value="#[payload.date]" doc:name="current date" doc:id="ab3ef797-f555-4da7-aeb5-f4b2a5a25d28" variableName="currDate" />
+					<set-variable value="#[payload.leavingDate]" doc:name="leaving date" doc:id="d5d8ec68-7806-4197-852d-02a8afd32013" variableName="ldate" />
+					<choice doc:name="Choice" doc:id="48de0622-4a55-4c48-bbd8-bc3019f603bb" >
+						<when expression='#[vars.ldate &lt; vars.currDate]'>
+							<db:insert doc:name="In active emp" doc:id="68bef45d-92cb-4feb-a90c-4de8c8666ac4" config-ref="Database_Config" >
+								<db:sql >INSERT INTO INACTIVEEMP(EMPLOYEEE_ID,First_Name,Middle_Name,Last_Name,Joining_Date,Leaving_Date,Designation,Department)
+VALUES (:id,:firstName,:middleName,:lastName,:joiningDate,:leavingDate,:designation,:department)</db:sql>
+								<db:input-parameters ><![CDATA[#[payload]]]></db:input-parameters>
+							</db:insert>
+						</when>
+						<otherwise>
+							<db:insert doc:name="active emp" doc:id="9834ea1b-ef9d-41f6-8990-9e1ea08ab634" config-ref="Database_Config" >
+								<db:sql >INSERT INTO ACTIVEEMP(EMPLOYEEE_ID,First_Name,Middle_Name,Last_Name,Joining_Date,Leaving_Date,Designation,Department)
+VALUES (:id,:firstName,:middleName,:lastName,:joiningDate,:leavingDate,:designation,:department)</db:sql>
+								<db:input-parameters ><![CDATA[#[payload]]]></db:input-parameters>
+							</db:insert>
+						</otherwise>
+					</choice>
+					<logger level="INFO" doc:name="Logger" doc:id="c77c3174-be38-4953-b8cb-1e3902b414ea" message="#[payload]" />
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Logger" doc:id="125e0792-7d3b-41d6-ba5c-a69d7f5561fe" message="#[payload]"/>
+			</batch:on-complete>
+		</batch:job>
+	</flow>
+</mule>
